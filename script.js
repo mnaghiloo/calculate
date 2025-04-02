@@ -1,115 +1,295 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // DOM Elements
-    const calculator = document.querySelector('.calculator');
-    const themeSwitch = document.getElementById('theme-switch');
-    const historyDisplay = document.getElementById('history');
-    const currentInput = document.getElementById('current-input');
-    const buttons = document.querySelectorAll('.btn');
+    const display = {
+        result: document.querySelector('.result'),
+        history: document.querySelector('.history')
+    };
     
-    // Calculator State
-    const state = {
+    let state = {
         currentValue: '0',
         previousValue: null,
         operator: null,
         waitingForOperand: false,
-        history: [],
         memory: 0,
-        advancedMode: false
+        angleMode: 'deg' // 'deg' or 'rad'
     };
     
-    // Initialize calculator
-    init();
+    // Constants
+    const MAX_DISPLAY_LENGTH = 15;
     
-    function init() {
-        // Add event listeners
-        buttons.forEach(button => {
-            button.addEventListener('click', () => handleButtonClick(button));
-            button.addEventListener('mousedown', () => button.classList.add('btn-animation'));
-            button.addEventListener('animationend', () => button.classList.remove('btn-animation'));
-        });
+    // Helper Functions
+    function updateDisplay() {
+        let displayValue = state.currentValue;
         
-        // Theme toggle functionality
-        themeSwitch.addEventListener('change', toggleTheme);
+        // Format display for better readability
+        if (displayValue.includes('.')) {
+            const [integerPart, decimalPart] = displayValue.split('.');
+            const formattedIntegerPart = Number(integerPart).toLocaleString('en-US', {
+                maximumFractionDigits: 0
+            });
+            displayValue = formattedIntegerPart + '.' + decimalPart;
+        } else {
+            displayValue = Number(displayValue).toLocaleString('en-US', {
+                maximumFractionDigits: 0
+            });
+        }
         
-        // Keyboard support
-        document.addEventListener('keydown', handleKeyboardInput);
+        // Handle number display size
+        const num = Number(state.currentValue);
         
-        // Load saved theme preference
-        loadThemePreference();
+        // Use scientific notation for very large/small numbers
+        if (Math.abs(num) > 1e12 || (Math.abs(num) < 1e-7 && num !== 0)) {
+            displayValue = num.toExponential(6);
+        }
+        
+        // Dynamically adjust font size based on length
+        const resultDisplay = display.result;
+        if (displayValue.length > 12) {
+            resultDisplay.style.fontSize = '32px';
+        } else if (displayValue.length > 9) {
+            resultDisplay.style.fontSize = '38px';
+        } else {
+            resultDisplay.style.fontSize = '';  // Reset to default from CSS
+        }
+        
+        display.result.textContent = displayValue;
     }
     
-    // Theme toggle
-    function toggleTheme() {
-        document.body.classList.toggle('dark-theme');
-        // Save preference
-        localStorage.setItem('calculatorTheme', themeSwitch.checked ? 'dark' : 'light');
-    }
-    
-    // Load theme preference from localStorage
-    function loadThemePreference() {
-        const savedTheme = localStorage.getItem('calculatorTheme');
-        if (savedTheme === 'dark') {
-            themeSwitch.checked = true;
-            document.body.classList.add('dark-theme');
+    function updateHistory() {
+        if (state.previousValue && state.operator) {
+            const operatorSymbol = getOperatorSymbol(state.operator);
+            display.history.textContent = `${state.previousValue} ${operatorSymbol}`;
+        } else {
+            display.history.textContent = '';
         }
     }
     
-    // Handle button clicks
-    function handleButtonClick(button) {
-        const action = button.dataset.action;
-        const value = button.dataset.value;
+    function getOperatorSymbol(op) {
+        const symbols = {
+            'add': '+',
+            'subtract': '−',
+            'multiply': '×',
+            'divide': '÷',
+            'power': '^'
+        };
+        return symbols[op] || op;
+    }
+    
+    function calculate() {
+        if (!state.previousValue || !state.operator) return;
         
-        if (value) {
-            inputDigit(value);
-        } else if (action) {
-            switch (action) {
-                case 'add':
-                case 'subtract':
-                case 'multiply':
-                case 'divide':
-                    handleOperator(action);
-                    break;
-                case 'clear':
-                    clearAll();
-                    break;
-                case 'delete':
-                    deleteLastDigit();
-                    break;
-                case 'calculate':
-                    calculate();
-                    break;
-                case 'decimal':
-                    inputDecimal();
-                    break;
-                case 'percent':
-                    percent();
-                    break;
-                case 'toggle-advanced':
-                    toggleAdvancedMode();
-                    break;
-                case 'sin':
-                case 'cos':
-                case 'tan':
-                case 'log':
-                case 'ln':
-                case 'sqrt':
-                    handleAdvancedOperation(action);
-                    break;
-                case 'pow':
-                    handleOperator('pow');
-                    break;
-            }
+        const prev = parseFloat(state.previousValue);
+        const current = parseFloat(state.currentValue);
+        let result;
+        
+        switch (state.operator) {
+            case 'add':
+                result = prev + current;
+                break;
+            case 'subtract':
+                result = prev - current;
+                break;
+            case 'multiply':
+                result = prev * current;
+                break;
+            case 'divide':
+                result = prev / current;
+                break;
+            case 'power':
+                result = Math.pow(prev, current);
+                break;
+            default:
+                return;
         }
         
+        // Handle cases like Infinity or NaN
+        if (!isFinite(result)) {
+            state.currentValue = result === Infinity ? 'Infinity' : 'Error';
+        } else {
+            state.currentValue = result.toString();
+        }
+        
+        state.previousValue = null;
+        state.operator = null;
+        state.waitingForOperand = true;
+        updateDisplay();
+        updateHistory();
+    }
+    
+    function handleNumberInput(number) {
+        if (state.waitingForOperand) {
+            state.currentValue = number;
+            state.waitingForOperand = false;
+        } else {
+            state.currentValue = state.currentValue === '0' ? number : state.currentValue + number;
+        }
         updateDisplay();
     }
     
-    // Handle keyboard input
-    function handleKeyboardInput(e) {
+    function handleOperator(operator) {
+        const currentValue = state.currentValue;
+        
+        if (state.operator && !state.waitingForOperand) {
+            calculate();
+        } else if (state.waitingForOperand && state.operator) {
+            state.operator = operator;
+            updateHistory();
+            return;
+        }
+        
+        state.previousValue = currentValue;
+        state.operator = operator;
+        state.waitingForOperand = true;
+        updateHistory();
+    }
+    
+    function handleDecimal() {
+        if (state.waitingForOperand) {
+            state.currentValue = '0.';
+            state.waitingForOperand = false;
+        } else if (!state.currentValue.includes('.')) {
+            state.currentValue += '.';
+        }
+        updateDisplay();
+    }
+    
+    function handleClear() {
+        state.currentValue = '0';
+        state.previousValue = null;
+        state.operator = null;
+        state.waitingForOperand = false;
+        updateDisplay();
+        updateHistory();
+    }
+    
+    function handlePlusMinus() {
+        state.currentValue = (parseFloat(state.currentValue) * -1).toString();
+        updateDisplay();
+    }
+    
+    function handlePercent() {
+        state.currentValue = (parseFloat(state.currentValue) / 100).toString();
+        updateDisplay();
+    }
+    
+    // Scientific functions
+    function toRadians(degrees) {
+        return degrees * (Math.PI / 180);
+    }
+    
+    function toDegrees(radians) {
+        return radians * (180 / Math.PI);
+    }
+    
+    function handleScientificFunction(action) {
+        let val = parseFloat(state.currentValue);
+        let result;
+        
+        switch (action) {
+            case 'rad':
+                state.angleMode = 'rad';
+                return;
+            case 'deg':
+                state.angleMode = 'deg';
+                return;
+            case 'sin':
+                if (state.angleMode === 'deg') val = toRadians(val);
+                result = Math.sin(val);
+                break;
+            case 'cos':
+                if (state.angleMode === 'deg') val = toRadians(val);
+                result = Math.cos(val);
+                break;
+            case 'tan':
+                if (state.angleMode === 'deg') val = toRadians(val);
+                result = Math.tan(val);
+                break;
+            case 'log':
+                result = Math.log10(val);
+                break;
+            case 'ln':
+                result = Math.log(val);
+                break;
+            case 'sqr':
+                result = Math.pow(val, 2);
+                break;
+            case 'cube':
+                result = Math.pow(val, 3);
+                break;
+            case 'power':
+                handleOperator('power');
+                return;
+            case 'exp':
+                result = Math.exp(val);
+                break;
+            case '10power':
+                result = Math.pow(10, val);
+                break;
+            case 'factorial':
+                if (val < 0 || val % 1 !== 0) {
+                    result = NaN;
+                } else {
+                    result = 1;
+                    for (let i = 2; i <= val; i++) result *= i;
+                }
+                break;
+            case 'pi':
+                result = Math.PI;
+                break;
+            case 'mc':
+                state.memory = 0;
+                return;
+            case 'mplus':
+                state.memory += parseFloat(state.currentValue);
+                state.waitingForOperand = true;
+                return;
+            case 'mminus':
+                state.memory -= parseFloat(state.currentValue);
+                state.waitingForOperand = true;
+                return;
+            case 'mr':
+                result = state.memory;
+                break;
+            default:
+                return;
+        }
+        
+        if (!isFinite(result)) {
+            state.currentValue = 'Error';
+        } else {
+            state.currentValue = result.toString();
+        }
+        
+        state.waitingForOperand = true;
+        updateDisplay();
+    }
+    
+    // Event Listeners
+    const calculator = document.querySelector('.calculator');
+    
+    calculator.addEventListener('click', (e) => {
+        const target = e.target;
+        
+        if (target.matches('.number')) {
+            handleNumberInput(target.dataset.number);
+        } else if (target.matches('.operator')) {
+            handleOperator(target.dataset.action);
+        } else if (target.matches('.decimal')) {
+            handleDecimal();
+        } else if (target.matches('.clear')) {
+            handleClear();
+        } else if (target.matches('.equals')) {
+            calculate();
+        } else if (target.matches('.function')) {
+            handleScientificFunction(target.dataset.action);
+        }
+    });
+    
+    // Keyboard support
+    document.addEventListener('keydown', (e) => {
         if (e.key >= '0' && e.key <= '9') {
-            inputDigit(e.key);
+            handleNumberInput(e.key);
         } else if (e.key === '.') {
-            inputDecimal();
+            handleDecimal();
         } else if (e.key === '+') {
             handleOperator('add');
         } else if (e.key === '-') {
@@ -117,201 +297,19 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (e.key === '*') {
             handleOperator('multiply');
         } else if (e.key === '/') {
-            e.preventDefault();
+            e.preventDefault(); // Prevent browser's find feature
             handleOperator('divide');
+        } else if (e.key === '^') {
+            handleOperator('power');
         } else if (e.key === 'Enter' || e.key === '=') {
-            e.preventDefault();
             calculate();
         } else if (e.key === 'Escape') {
-            clearAll();
-        } else if (e.key === 'Backspace') {
-            deleteLastDigit();
+            handleClear();
         } else if (e.key === '%') {
-            percent();
+            handlePercent();
         }
-        
-        updateDisplay();
-    }
+    });
     
-    // Input digit
-    function inputDigit(digit) {
-        if (state.waitingForOperand) {
-            state.currentValue = digit;
-            state.waitingForOperand = false;
-        } else {
-            state.currentValue = state.currentValue === '0' ? digit : state.currentValue + digit;
-        }
-    }
-    
-    // Input decimal
-    function inputDecimal() {
-        if (state.waitingForOperand) {
-            state.currentValue = '0.';
-            state.waitingForOperand = false;
-        } else if (state.currentValue.indexOf('.') === -1) {
-            state.currentValue += '.';
-        }
-    }
-    
-    // Handle operators
-    function handleOperator(operator) {
-        const inputValue = parseFloat(state.currentValue);
-        
-        if (state.previousValue === null) {
-            state.previousValue = inputValue;
-        } else if (state.operator && !state.waitingForOperand) {
-            const result = performCalculation();
-            state.currentValue = String(result);
-            state.previousValue = result;
-            addToHistory();
-        }
-        
-        state.waitingForOperand = true;
-        state.operator = operator;
-    }
-    
-    // Perform calculation
-    function performCalculation() {
-        const prevValue = state.previousValue;
-        const currentValue = parseFloat(state.currentValue);
-        let result;
-        
-        switch (state.operator) {
-            case 'add':
-                result = prevValue + currentValue;
-                break;
-            case 'subtract':
-                result = prevValue - currentValue;
-                break;
-            case 'multiply':
-                result = prevValue * currentValue;
-                break;
-            case 'divide':
-                result = prevValue / currentValue;
-                break;
-            case 'pow':
-                result = Math.pow(prevValue, currentValue);
-                break;
-            default:
-                return currentValue;
-        }
-        
-        return parseFloat(result.toFixed(8));
-    }
-    
-    // Calculate result
-    function calculate() {
-        if (!state.operator || state.waitingForOperand) {
-            return;
-        }
-        
-        const result = performCalculation();
-        const operation = getOperationSymbol(state.operator);
-        
-        // Add to history
-        state.history.push(`${state.previousValue} ${operation} ${state.currentValue} = ${result}`);
-        
-        state.currentValue = String(result);
-        state.previousValue = null;
-        state.operator = null;
-        state.waitingForOperand = true;
-        
-        updateHistoryDisplay();
-    }
-    
-    // Add current operation to history
-    function addToHistory() {
-        const operation = getOperationSymbol(state.operator);
-        state.history.push(`${state.previousValue} ${operation} ${state.currentValue} = ${state.previousValue}`);
-        updateHistoryDisplay();
-    }
-    
-    // Get operation symbol for display
-    function getOperationSymbol(operator) {
-        switch (operator) {
-            case 'add': return '+';
-            case 'subtract': return '-';
-            case 'multiply': return '×';
-            case 'divide': return '÷';
-            case 'pow': return '^';
-            default: return '';
-        }
-    }
-    
-    // Update history display
-    function updateHistoryDisplay() {
-        if (state.history.length > 0) {
-            historyDisplay.textContent = state.history[state.history.length - 1];
-        } else {
-            historyDisplay.textContent = '';
-        }
-    }
-    
-    // Clear all
-    function clearAll() {
-        state.currentValue = '0';
-        state.previousValue = null;
-        state.operator = null;
-        state.waitingForOperand = false;
-    }
-    
-    // Delete last digit
-    function deleteLastDigit() {
-        if (state.waitingForOperand) return;
-        
-        state.currentValue = state.currentValue.length === 1 ? '0' : state.currentValue.slice(0, -1);
-    }
-    
-    // Percent function
-    function percent() {
-        const value = parseFloat(state.currentValue);
-        state.currentValue = String(value / 100);
-    }
-    
-    // Handle advanced operations
-    function handleAdvancedOperation(operation) {
-        const value = parseFloat(state.currentValue);
-        let result;
-        
-        switch (operation) {
-            case 'sin':
-                result = Math.sin(value * (Math.PI / 180)); // Convert degrees to radians
-                break;
-            case 'cos':
-                result = Math.cos(value * (Math.PI / 180));
-                break;
-            case 'tan':
-                result = Math.tan(value * (Math.PI / 180));
-                break;
-            case 'log':
-                result = Math.log10(value);
-                break;
-            case 'ln':
-                result = Math.log(value);
-                break;
-            case 'sqrt':
-                result = Math.sqrt(value);
-                break;
-        }
-        
-        if (result !== undefined) {
-            state.currentValue = String(parseFloat(result.toFixed(8)));
-            state.waitingForOperand = true;
-            
-            // Add to history
-            state.history.push(`${operation}(${value}) = ${state.currentValue}`);
-            updateHistoryDisplay();
-        }
-    }
-    
-    // Toggle advanced mode
-    function toggleAdvancedMode() {
-        state.advancedMode = !state.advancedMode;
-        calculator.classList.toggle('advanced-mode');
-    }
-    
-    // Update display
-    function updateDisplay() {
-        currentInput.textContent = state.currentValue;
-    }
+    // Initialize
+    updateDisplay();
 }); 
